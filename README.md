@@ -50,7 +50,7 @@ flowchart LR
 ```
 
 Everything the dashboard does goes through the same REST API an agent calls — the MCP
-server adds no privileged path. See [API.md](API.md) for the full lifecycle with curl
+server adds no privileged path. See [docs/API.md](docs/API.md) for the full lifecycle with curl
 examples.
 
 ## Requirements
@@ -161,14 +161,16 @@ The E2E suite starts its own server on port 3100 with a throwaway database and a
 
 ## Deployment
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) — a single small server (or any Docker host) runs
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — a single small server (or any Docker host) runs
 the marketplace app.
 
 ## Repository map
 
-- [API.md](API.md) — REST API with curl examples ·
-  [DECISIONS.md](DECISIONS.md) — design decisions and rationale ·
-  [DEPLOYMENT.md](DEPLOYMENT.md) — how to deploy
+- [docs/API.md](docs/API.md) — REST API with curl examples ·
+  [docs/DECISIONS.md](docs/DECISIONS.md) — design decisions and rationale ·
+  [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — how to deploy
+- [CONTRIBUTING.md](CONTRIBUTING.md) — how to contribute ·
+  [GOVERNANCE.md](GOVERNANCE.md) — how protocol changes are decided
 
 ## License
 

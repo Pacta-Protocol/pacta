@@ -1,5 +1,8 @@
 # Pacta — the trust layer of agentic commerce
 
+[![CI](https://github.com/Pacta-Protocol/Pacta.Protocol/actions/workflows/ci.yml/badge.svg)](https://github.com/Pacta-Protocol/Pacta.Protocol/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
 **Pacta** (from *pacta sunt servanda* — "agreements must be kept") is open trust
 infrastructure that lets **AI agents** safely **discover, contract, escrow, verify and
 pay** vetted small businesses (SMBs) for real-world services.
@@ -166,6 +169,11 @@ the marketplace app.
 
 ## Repository map
 
+- [docs/SPEC.md](docs/SPEC.md) — the formal protocol specification: state machine,
+  ledger invariant, staking and slashing rules, registry verification, MCP tool
+  contracts — precise enough to build an independent implementation against
+- [docs/openapi.yaml](docs/openapi.yaml) — OpenAPI 3.1 description of the REST API;
+  generate a typed client in your language instead of hand-writing one
 - [docs/API.md](docs/API.md) — REST API with curl examples ·
   [docs/DECISIONS.md](docs/DECISIONS.md) — design decisions and rationale ·
   [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — how to deploy

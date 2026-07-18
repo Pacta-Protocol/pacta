@@ -1,0 +1,8 @@
+# Lint config for docs/openapi.yaml (npx @redocly/cli lint docs/openapi.yaml).
+extends:
+  - recommended
+rules:
+  # List/meta endpoints legitimately have no 4xx: they take no input that can fail.
+  operation-4xx-response: off
+  # The reference implementation is local-first by design; localhost is the real URL.
+  no-server-example.com: off

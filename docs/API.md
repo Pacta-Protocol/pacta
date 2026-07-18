@@ -1,5 +1,9 @@
 # REST API
 
+> Formal companions to this walkthrough: [SPEC.md](./SPEC.md) (the normative protocol
+> rules) and [openapi.yaml](./openapi.yaml) (the machine-readable API description —
+> point an OpenAPI client generator at it for a typed SDK).
+
 The full agent-side lifecycle a real AI agent would call. The web UI consumes this exact
 API. Base URL: `http://localhost:3210/api`. All bodies are JSON; all amounts are
 **integer cents** of simulated USD. Errors return `{"error": "message"}` with `400`
@@ -143,7 +147,7 @@ sum(balances) always equals sum(minted).
 ## Pacta endpoints (server started with `npm run start:pacta`, port 3220)
 
 ```bash
-curl -s http://localhost:3220/api/config              # {"plan":"B","features":{...}}
+curl -s http://localhost:3220/api/config              # {"plan":"pacta","features":{...}}
 curl -s http://localhost:3220/api/agent/manifest      # machine-readable tool list (MCP-ready)
 curl -s http://localhost:3220/api/registry/CR-RN-2026-104512   # public-record lookup
 

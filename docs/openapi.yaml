@@ -1,0 +1,972 @@
+openapi: 3.1.0
+info:
+  title: Pacta Protocol REST API
+  version: 0.1.0
+  summary: The trust layer of agentic commerce - REST surface of the Pacta reference implementation.
+  description: |
+    The full lifecycle an AI agent (or any client) uses to discover, contract,
+    escrow, verify and pay real-world SMB services on a Pacta marketplace.
+
+    All amounts are **integer cents** of simulated USD. Errors are
+    `{"error": "message"}` with `400` (validation), `404` (not found) or `409`
+    (conflict with protocol rules). The normative protocol rules - state machine,
+    ledger invariant, staking, slashing, registry verification - live in
+    [SPEC.md](./SPEC.md); this document is the exact HTTP shape of the reference
+    implementation.
+
+    Endpoints marked **[Pacta]** exist or change behavior only when the server
+    runs the Pacta profile (`npm run start:pacta`, default port 3220).
+  license:
+    name: MIT
+    identifier: MIT
+  contact:
+    name: Pacta Protocol
+    url: https://pactaprotocol.org
+externalDocs:
+  description: Protocol specification (SPEC.md)
+  url: https://github.com/Pacta-Protocol/Pacta.Protocol/blob/main/docs/SPEC.md
+# The reference implementation has no authentication: clients declare who they
+# act for. Hardening that boundary is deployment work (see SPEC.md, Appendix B).
+security: []
+servers:
+  - url: http://localhost:3220/api
+    description: Local Pacta-profile server (staking, registry verification)
+  - url: http://localhost:3210/api
+    description: Local Base-profile server (contrast baseline)
+tags:
+  - name: meta
+    description: Server profile and machine-readable agent manifest.
+  - name: parties
+    description: Agents, SMBs and arbiters.
+  - name: offers
+    description: Publishing and discovering service offers.
+  - name: engagements
+    description: The contract lifecycle - draft, agree, fund, deliver, verify, settle.
+  - name: registry
+    description: Public-registry lookups used to verify proofs. [Pacta]
+  - name: ledger
+    description: Accounts, transaction journal and the ledger invariant.
+
+paths:
+  /config:
+    get:
+      operationId: getConfig
+      tags: [meta]
+      summary: Server profile and feature flags
+      responses:
+        '200':
+          description: Which profile this server runs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [plan, features]
+                properties:
+                  plan:
+                    type: string
+                    enum: [base, pacta]
+                  features:
+                    type: object
+                    required: [staking, registry_verification, agent_manifest]
+                    properties:
+                      staking: { type: boolean }
+                      registry_verification: { type: boolean }
+                      agent_manifest: { type: boolean }
+
+  /agent/manifest:
+    get:
+      operationId: getAgentManifest
+      tags: [meta]
+      summary: Machine-readable description of the agent-side lifecycle
+      description: |
+        Designed to be wrapped 1:1 by an MCP server (the reference MCP server in
+        `mcp/server.js` does exactly that) so any AI agent can consume the
+        marketplace without a custom SDK.
+      responses:
+        '200':
+          description: Tool list with methods, paths and parameter hints.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [name, plan, description, tools]
+                properties:
+                  name: { type: string }
+                  plan: { type: string, enum: [base, pacta] }
+                  description: { type: string }
+                  tools:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, method, path, description]
+                      properties:
+                        name: { type: string }
+                        method: { type: string }
+                        path: { type: string }
+                        description: { type: string }
+                        params:
+                          type: object
+                          additionalProperties: { type: string }
+
+  /users:
+    get:
+      operationId: listUsers
+      tags: [parties]
+      summary: All parties (agents, SMBs, arbiters)
+      responses:
+        '200':
+          description: Every party on the marketplace, with balances and profiles.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [agents, smbs, arbiters]
+                properties:
+                  agents:
+                    type: array
+                    items: { $ref: '#/components/schemas/AgentBalance' }
+                  smbs:
+                    type: array
+                    items: { $ref: '#/components/schemas/SmbPublic' }
+                  arbiters:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, name]
+                      properties:
+                        id: { type: integer }
+                        name: { type: string }
+
+  /agents/{id}:
+    get:
+      operationId: getAgent
+      tags: [parties]
+      summary: One agent with its current balance
+      parameters:
+        - $ref: '#/components/parameters/idParam'
+      responses:
+        '200':
+          description: The agent.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentBalance' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /smbs:
+    get:
+      operationId: listSmbs
+      tags: [parties]
+      summary: All SMBs (public profiles)
+      responses:
+        '200':
+          description: Public profile of every SMB.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SmbPublic' }
+    post:
+      operationId: registerSmb
+      tags: [parties]
+      summary: Register an SMB
+      description: |
+        Base profile: the vetted badge is auto-granted at registration.
+        **[Pacta]**: vetted only by posting collateral - pass `stake_cents > 0`
+        here, or stake later via `POST /smbs/{id}/stake`; without a stake the SMB
+        is registered but **not** vetted and cannot be hired.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, category, location]
+              properties:
+                name: { type: string }
+                category: { type: string, examples: [legal, tourism, real-estate, accounting] }
+                location: { type: string }
+                description: { type: string }
+                capabilities:
+                  type: string
+                  description: Comma-separated keywords matched by search.
+                stake_cents:
+                  type: integer
+                  minimum: 0
+                  description: "[Pacta] Optional initial collateral, integer cents."
+      responses:
+        '201':
+          description: The registered SMB.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SmbPublic' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /smbs/{id}:
+    get:
+      operationId: getSmb
+      tags: [parties]
+      summary: One SMB with balance and offers
+      parameters:
+        - $ref: '#/components/parameters/idParam'
+      responses:
+        '200':
+          description: Public profile plus money balance and published offers.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SmbPublic'
+                  - type: object
+                    required: [balance_cents, offers]
+                    properties:
+                      balance_cents: { type: integer }
+                      offers:
+                        type: array
+                        items: { $ref: '#/components/schemas/Offer' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /smbs/{id}/stake:
+    post:
+      operationId: depositStake
+      tags: [parties]
+      summary: Post (more) stake [Pacta]
+      description: |
+        A simulated external deposit into the SMB's collateral account. Grants or
+        restores the vetted badge and raises the exposure cap. Returns `404` on a
+        Base-profile server.
+      parameters:
+        - $ref: '#/components/parameters/idParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount_cents]
+              properties:
+                amount_cents:
+                  type: integer
+                  minimum: 1
+                  description: Positive integer cents.
+      responses:
+        '201':
+          description: The SMB with its updated stake, cap and badge.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SmbPublic' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /offers:
+    get:
+      operationId: searchOffers
+      tags: [offers]
+      summary: Search offers
+      description: |
+        `q` keywords are AND-matched (case-insensitive substring) across the offer
+        title/description/steps and the SMB name/category/location/capabilities.
+        Ranked by SMB rating score (good - bad) descending, then price ascending,
+        then id.
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+          description: Space-separated keywords, all must match.
+          example: lawyer costa rica hotel
+        - name: category
+          in: query
+          schema: { type: string }
+          description: Exact category filter (case-insensitive).
+        - name: location
+          in: query
+          schema: { type: string }
+          description: Location substring filter.
+        - name: vetted
+          in: query
+          schema: { type: string, enum: ['1', 'true', 'yes', 'on'] }
+          description: Any truthy value keeps only vetted SMBs.
+      responses:
+        '200':
+          description: Matching active offers, ranked.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Offer' }
+    post:
+      operationId: publishOffer
+      tags: [offers]
+      summary: Publish an offer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [smb_id, title, price_cents, upfront_pct, steps]
+              properties:
+                smb_id: { type: integer }
+                title: { type: string }
+                description: { type: string }
+                price_cents: { type: integer, minimum: 1 }
+                upfront_pct:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+                  description: Percentage of the price escrowed as downpayment.
+                steps:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [title]
+                    properties:
+                      title: { type: string }
+                      description: { type: string }
+      responses:
+        '201':
+          description: The published offer.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Offer' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /offers/{id}:
+    get:
+      operationId: getOffer
+      tags: [offers]
+      summary: One offer with steps, terms and SMB profile
+      parameters:
+        - $ref: '#/components/parameters/idParam'
+      responses:
+        '200':
+          description: The offer.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Offer' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /engagements:
+    get:
+      operationId: listEngagements
+      tags: [engagements]
+      summary: List engagements (filterable)
+      parameters:
+        - name: agent_id
+          in: query
+          schema: { type: integer }
+        - name: smb_id
+          in: query
+          schema: { type: integer }
+        - name: state
+          in: query
+          schema: { $ref: '#/components/schemas/EngagementState' }
+      responses:
+        '200':
+          description: Engagements, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Engagement' }
+    post:
+      operationId: createEngagement
+      tags: [engagements]
+      summary: Create a draft engagement from an offer
+      description: |
+        Snapshots the offer's steps and terms into a `draft` contract - nothing is
+        binding or paid yet. Posting the same offer + agent again while a draft is
+        open returns the existing draft (`200`) instead of a duplicate.
+        **[Pacta]**: fails `409` if the SMB is not vetted (no stake posted).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [offer_id, agent_id]
+              properties:
+                offer_id: { type: integer }
+                agent_id: { type: integer }
+      responses:
+        '201':
+          description: The new draft engagement.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Engagement' }
+        '200':
+          description: An existing open draft for the same offer + agent (dedupe).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Engagement' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /engagements/{id}:
+    get:
+      operationId: getEngagement
+      tags: [engagements]
+      summary: One engagement - state, steps, proofs, escrow balance
+      parameters:
+        - $ref: '#/components/parameters/idParam'
+      responses:
+        '200':
+          description: The engagement.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Engagement' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /engagements/{id}/steps/{stepId}:
+    patch:
+      operationId: editStep
+      tags: [engagements]
+      summary: Edit a step (draft only)
+      description: |
+        Steps are editable only while the engagement is a `draft`. From `agreed`
+        onward the contract is immutable and this returns `409`.
+      parameters:
+        - $ref: '#/components/parameters/idParam'
+        - $ref: '#/components/parameters/stepIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+                description: { type: string }
+      responses:
+        '200':
+          description: The engagement with the edited step.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Engagement' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /engagements/{id}/agree:
+    post:
+      operationId: agreeEngagement
+      tags: [engagements]
+      summary: 'Lock the contract (draft -> agreed)'
+      description: |
+        Terms and steps become immutable. **[Pacta]**: fails `409` if the SMB's
+        active exposure plus this price would exceed its exposure cap
+        (5 x stake + 50% of completed GMV); the message includes the exact amounts.
+      parameters:
+        - $ref: '#/components/parameters/idParam'
+      responses:
+        '200':
+          description: The agreed engagement.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Engagement' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /engagements/{id}/fund:
+    post:
+      operationId: fundEscrow
+      tags: [engagements]
+      summary: 'Fund escrow with the downpayment (agreed -> funded)'
+      description: |
+        Moves `round(price x upfront_pct / 100)` cents from the agent's account
+        into the engagement's escrow account, atomically with the state change.
+        Fails `409` (insufficient funds) leaving everything unchanged.
+      parameters:
+        - $ref: '#/components/parameters/idParam'
+      responses:
+        '200':
+          description: The funded engagement (see `escrow_balance_cents`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Engagement' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /engagements/{id}/steps/{stepId}/complete:
+    post:
+      operationId: completeStep
+      tags: [engagements]
+      summary: Provider marks a step done with proof
+      description: |
+        Allowed only while `funded` or `in_progress` (escrow first, work second);
+        the first completion moves `funded -> in_progress`. **[Pacta]**: a step
+        with a `verification_kind` additionally requires `registry_ref`, which
+        must exist in the public registry **and** be of the step's kind - the
+        proof is then stored as platform-verified.
+      parameters:
+        - $ref: '#/components/parameters/idParam'
+        - $ref: '#/components/parameters/stepIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [proof_text]
+              properties:
+                proof_text: { type: string }
+                proof_url: { type: string }
+                registry_ref:
+                  type: string
+                  description: "[Pacta] Required for registry-anchored steps."
+                  examples: [CR-RN-2026-104512]
+      responses:
+        '200':
+          description: The engagement with the completed step.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Engagement' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /engagements/{id}/submit:
+    post:
+      operationId: submitEngagement
+      tags: [engagements]
+      summary: 'Provider submits for verification (-> submitted)'
+      description: Fails `409` unless every step is done with proof.
+      parameters:
+        - $ref: '#/components/parameters/idParam'
+      responses:
+        '200':
+          description: The submitted engagement.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Engagement' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /engagements/{id}/approve:
+    post:
+      operationId: approveEngagement
+      tags: [engagements]
+      summary: 'Agent accepts the proofs - settlement (submitted -> completed)'
+      description: |
+        One atomic transaction draws the remaining balance from the agent,
+        releases the full escrow to the SMB and flips the state - double release
+        is structurally impossible. Irreversible: verify the proofs first.
+      parameters:
+        - $ref: '#/components/parameters/idParam'
+      responses:
+        '200':
+          description: The completed engagement (escrow zeroed).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Engagement' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /engagements/{id}/reject:
+    post:
+      operationId: rejectEngagement
+      tags: [engagements]
+      summary: 'Agent rejects the proofs - dispute (submitted -> disputed)'
+      description: Escrow stays held for the arbiter. The provider risks its stake.
+      parameters:
+        - $ref: '#/components/parameters/idParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string }
+      responses:
+        '200':
+          description: The disputed engagement.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Engagement' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /engagements/{id}/resolve:
+    post:
+      operationId: resolveDispute
+      tags: [engagements]
+      summary: 'Arbiter rules on a dispute (disputed -> resolved)'
+      description: |
+        Disposes of the held escrow: `release` -> all to the SMB, `refund` -> all
+        to the agent, `split` -> 50/50 (odd cent to the SMB). **[Pacta]**: an
+        adverse ruling slashes the SMB's stake in the same transaction - 20% of
+        the price on `refund`, 10% on `split`, bounded by the stake balance, paid
+        to the agent; a stake drained to zero clears the vetted badge.
+      parameters:
+        - $ref: '#/components/parameters/idParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ruling]
+              properties:
+                ruling:
+                  type: string
+                  enum: [release, refund, split]
+      responses:
+        '200':
+          description: The resolved engagement.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Engagement' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /engagements/{id}/rate:
+    post:
+      operationId: rateProvider
+      tags: [engagements]
+      summary: Agent rates the SMB after settlement
+      description: |
+        Only in state `completed` or `resolved`, once per engagement. Feeds the
+        SMB's aggregate and re-ranks search results.
+      parameters:
+        - $ref: '#/components/parameters/idParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [value]
+              properties:
+                value:
+                  type: string
+                  enum: [good, bad]
+      responses:
+        '201':
+          description: The rated engagement.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Engagement' }
+        '400': { $ref: '#/components/responses/Validation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /registry/{ref}:
+    get:
+      operationId: lookupRegistryRecord
+      tags: [registry]
+      summary: Look up a public-registry record by reference
+      description: |
+        The independent-verification primitive: agents re-check every
+        `proof_registry_ref` here before approving. Not-found means the proof
+        does not verify.
+      parameters:
+        - name: ref
+          in: path
+          required: true
+          schema: { type: string }
+          example: CR-RN-2026-104512
+      responses:
+        '200':
+          description: The official record.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RegistryRecord' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /disputes:
+    get:
+      operationId: listDisputes
+      tags: [engagements]
+      summary: Disputed and resolved engagements
+      responses:
+        '200':
+          description: Engagements in state `disputed` or `resolved`, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Engagement' }
+
+  /ledger:
+    get:
+      operationId: getLedger
+      tags: [ledger]
+      summary: Accounts, recent transactions and the invariant
+      responses:
+        '200':
+          description: The ledger (transactions limited to the most recent 200).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accounts, transactions, invariant]
+                properties:
+                  accounts:
+                    type: array
+                    items: { $ref: '#/components/schemas/Account' }
+                  transactions:
+                    type: array
+                    items: { $ref: '#/components/schemas/Transaction' }
+                  invariant: { $ref: '#/components/schemas/Invariant' }
+
+  /ledger/invariant:
+    get:
+      operationId: checkInvariant
+      tags: [ledger]
+      summary: 'The ledger invariant: sum(balances) = sum(minted)'
+      description: 'Must report `ok: true` at all times; auditors poll this.'
+      responses:
+        '200':
+          description: The invariant check.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invariant' }
+
+components:
+  parameters:
+    idParam:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+    stepIdParam:
+      name: stepId
+      in: path
+      required: true
+      schema: { type: integer }
+
+  responses:
+    Validation:
+      description: 'Validation error: missing or invalid fields, invalid JSON.'
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Unknown entity, registry reference or route.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: |
+        Conflict with protocol rules: illegal state transition, locked contract,
+        insufficient funds, unvetted SMB, exposure cap exceeded, unknown or
+        wrong-kind registry record, duplicate rating or duplicate SMB name.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Human-readable message stating the rule that was violated.
+
+    EngagementState:
+      type: string
+      enum: [draft, agreed, funded, in_progress, submitted, completed, disputed, resolved]
+
+    RatingAggregate:
+      type: object
+      required: [good, bad, score]
+      properties:
+        good: { type: integer }
+        bad: { type: integer }
+        score:
+          type: integer
+          description: good - bad; the primary search-ranking key.
+
+    AgentBalance:
+      type: object
+      required: [id, name, balance_cents]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        balance_cents: { type: integer }
+
+    SmbPublic:
+      type: object
+      required: [id, name, category, location, description, capabilities, vetted, rating]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        category: { type: string }
+        location: { type: string }
+        description: { type: string }
+        capabilities: { type: string }
+        vetted: { type: boolean }
+        rating: { $ref: '#/components/schemas/RatingAggregate' }
+        stake_cents:
+          type: integer
+          description: "[Pacta] Collateral currently at risk."
+        exposure_cap_cents:
+          type: integer
+          description: "[Pacta] 5 x stake + 50% of completed GMV."
+        active_exposure_cents:
+          type: integer
+          description: "[Pacta] Summed price of engagements in active states."
+
+    OfferStep:
+      type: object
+      required: [id, position, title, description]
+      properties:
+        id: { type: integer }
+        position: { type: integer }
+        title: { type: string }
+        description: { type: string }
+        verification_kind:
+          type: [string, 'null']
+          description: "[Pacta] Non-null marks a registry-anchored step."
+
+    Offer:
+      type: object
+      required: [id, title, description, price_cents, upfront_pct, active, steps, smb]
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        description: { type: string }
+        price_cents: { type: integer }
+        upfront_pct: { type: integer }
+        active: { type: boolean }
+        steps:
+          type: array
+          items: { $ref: '#/components/schemas/OfferStep' }
+        smb: { $ref: '#/components/schemas/SmbPublic' }
+
+    EngagementStep:
+      type: object
+      required: [id, position, title, description, status, proof_verified]
+      properties:
+        id: { type: integer }
+        position: { type: integer }
+        title: { type: string }
+        description: { type: string }
+        status:
+          type: string
+          enum: [pending, done]
+        proof_text: { type: [string, 'null'] }
+        proof_url: { type: [string, 'null'] }
+        completed_at: { type: [string, 'null'] }
+        verification_kind: { type: [string, 'null'] }
+        proof_registry_ref: { type: [string, 'null'] }
+        proof_verified:
+          type: boolean
+          description: "[Pacta] True when the proof matched a registry record of the required kind at completion time."
+
+    Engagement:
+      type: object
+      required:
+        [id, offer_id, title, state, price_cents, upfront_pct, upfront_cents,
+         remaining_cents, agent, smb, escrow_balance_cents, steps, steps_done,
+         steps_total, created_at, updated_at]
+      properties:
+        id: { type: integer }
+        offer_id: { type: integer }
+        title: { type: string }
+        state: { $ref: '#/components/schemas/EngagementState' }
+        price_cents: { type: integer }
+        upfront_pct: { type: integer }
+        upfront_cents:
+          type: integer
+          description: round(price_cents x upfront_pct / 100), escrowed at funding.
+        remaining_cents:
+          type: integer
+          description: price_cents - upfront_cents, drawn at approval.
+        dispute_reason: { type: [string, 'null'] }
+        resolution:
+          type: [string, 'null']
+          enum: [release, refund, split, null]
+        rating:
+          type: [string, 'null']
+          enum: [good, bad, null]
+        agent:
+          type: object
+          required: [id, name]
+          properties:
+            id: { type: integer }
+            name: { type: string }
+        smb:
+          type: object
+          required: [id, name]
+          properties:
+            id: { type: integer }
+            name: { type: string }
+        escrow_balance_cents: { type: integer }
+        steps:
+          type: array
+          items: { $ref: '#/components/schemas/EngagementStep' }
+        steps_done: { type: integer }
+        steps_total: { type: integer }
+        created_at: { type: string }
+        updated_at: { type: string }
+
+    RegistryRecord:
+      type: object
+      required: [ref, kind, title, issued_to, details, created_at]
+      properties:
+        ref: { type: string }
+        kind:
+          type: string
+          description: Open vocabulary; the seed data uses incorporation, land_eligibility, permit, tax_filing.
+        title: { type: string }
+        issued_to: { type: string }
+        details: { type: string }
+        created_at: { type: string }
+
+    Account:
+      type: object
+      required: [id, kind, ref_id, owner, balance_cents]
+      properties:
+        id: { type: integer }
+        kind:
+          type: string
+          enum: [agent, smb, escrow, stake]
+        ref_id:
+          type: integer
+          description: Owner id (agent/smb/stake) or engagement id (escrow).
+        owner: { type: [string, 'null'] }
+        balance_cents: { type: integer, minimum: 0 }
+
+    Transaction:
+      type: object
+      required: [id, engagement_id, from_account_id, to_account_id, amount_cents, type, memo, created_at]
+      properties:
+        id: { type: integer }
+        engagement_id: { type: [integer, 'null'] }
+        from_account_id:
+          type: [integer, 'null']
+          description: NULL denotes a mint (external deposit entering the system).
+        to_account_id: { type: integer }
+        amount_cents: { type: integer, minimum: 1 }
+        type:
+          type: string
+          enum: [seed, escrow_fund, escrow_release, refund, split_release, split_refund, stake_slash]
+        memo: { type: string }
+        created_at: { type: string }
+
+    Invariant:
+      type: object
+      required: [ok, total_balances_cents, total_minted_cents, mismatches]
+      properties:
+        ok:
+          type: boolean
+          description: True iff sum(balances) = sum(minted) and every balance replays from the journal.
+        total_balances_cents: { type: integer }
+        total_minted_cents: { type: integer }
+        mismatches:
+          type: array
+          items:
+            type: object
+            required: [account_id, expected, actual]
+            properties:
+              account_id: { type: integer }
+              expected: { type: integer }
+              actual: { type: integer }

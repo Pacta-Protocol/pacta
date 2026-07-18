@@ -169,6 +169,9 @@ the marketplace app.
 
 ## Repository map
 
+- [docs/LITEPAPER.md](docs/LITEPAPER.md) - the whole story in one read: the
+  problem, the mechanism, what is built today, impact and roadmap · also in
+  Spanish: [docs/LITEPAPER.es.md](docs/LITEPAPER.es.md)
 - [docs/SPEC.md](docs/SPEC.md) — the formal protocol specification: state machine,
   ledger invariant, staking and slashing rules, registry verification, MCP tool
   contracts — precise enough to build an independent implementation against

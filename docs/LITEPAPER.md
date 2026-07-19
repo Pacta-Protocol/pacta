@@ -122,7 +122,9 @@ protocol:
   winning the dispute. Works with hosted or fully local open models.
 - **MedVoyage**: an autonomous multi-agent buyer (built on the ROMA framework)
   that forms a medical-tourism company in Colombia across three registries,
-  and catches a fake health license.
+  and catches a fake health license. The full scenario, fraud catch and
+  dispute included, has run live end to end on a fully local open model
+  (qwen3 via Ollama).
 
 ## What exists today, honestly
 

@@ -131,7 +131,10 @@ protocolo:
   totalmente locales.
 - **MedVoyage**: un comprador multiagente autónomo (construido sobre el
   framework ROMA) que forma una empresa de turismo médico en Colombia a través
-  de tres registros, y atrapa una licencia de salud falsa.
+  de tres registros, y atrapa una licencia de salud falsa. El escenario
+  completo, con la detección del fraude y la disputa incluidas, ha corrido en
+  vivo de punta a punta con un modelo abierto totalmente local (qwen3 vía
+  Ollama).
 
 ## Qué existe hoy, con honestidad
 

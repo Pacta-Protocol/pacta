@@ -32,6 +32,16 @@ function createApiRouter(db, { pacta = false } = {}) {
 
   // ---------- helpers --------------------------------------------------------
 
+  // Fold to a diacritic-insensitive, lowercase form so search works the way
+  // Spanish and Portuguese speakers actually type: `habilitacion` finds
+  // `habilitación`, `sao paulo` finds `São Paulo`. Both the query and the text
+  // being searched are folded, so a match happens regardless of which side
+  // carries the accent.
+  const fold = (s) => String(s || '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
+
   const ratingsBySmb = () => {
     const rows = db.prepare(
       `SELECT smb_id,
@@ -292,29 +302,30 @@ function createApiRouter(db, { pacta = false } = {}) {
     res.status(201).json(offerPublic(db.prepare('SELECT * FROM offers WHERE id = ?').get(id)));
   });
 
-  // Search: q keywords are ANDed, case-insensitive, matched across the offer text,
-  // its steps, and the SMB profile. Ranked by SMB rating score desc, then price asc.
+  // Search: q keywords are ANDed, case- and accent-insensitive, matched across
+  // the offer text, its steps, and the SMB profile. Ranked by SMB rating score
+  // desc, then price asc.
   router.get('/offers', (req, res) => {
     const ratings = ratingsBySmb();
-    const q = String(req.query.q || '').trim().toLowerCase();
-    const category = String(req.query.category || '').trim().toLowerCase();
-    const location = String(req.query.location || '').trim().toLowerCase();
+    const q = fold(String(req.query.q || '').trim());
+    const category = fold(String(req.query.category || '').trim());
+    const location = fold(String(req.query.location || '').trim());
     const vettedOnly = ['1', 'true', 'yes', 'on'].includes(String(req.query.vetted || '').trim().toLowerCase());
     const tokens = q ? q.split(/\s+/) : [];
 
     let results = db.prepare('SELECT * FROM offers WHERE active = 1 ORDER BY id').all()
       .map((o) => offerPublic(o, ratings));
 
-    if (category) results = results.filter((o) => o.smb.category.toLowerCase() === category);
-    if (location) results = results.filter((o) => o.smb.location.toLowerCase().includes(location));
+    if (category) results = results.filter((o) => fold(o.smb.category) === category);
+    if (location) results = results.filter((o) => fold(o.smb.location).includes(location));
     if (vettedOnly) results = results.filter((o) => o.smb.vetted);
     if (tokens.length) {
       results = results.filter((o) => {
-        const haystack = [
+        const haystack = fold([
           o.title, o.description,
           ...o.steps.map((s) => `${s.title} ${s.description}`),
           o.smb.name, o.smb.category, o.smb.location, o.smb.capabilities,
-        ].join(' ').toLowerCase();
+        ].join(' '));
         return tokens.every((t) => haystack.includes(t));
       });
     }

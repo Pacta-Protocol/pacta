@@ -383,11 +383,14 @@ once by the buyer at settlement time.
 
 - Only `active` offers are searchable.
 - `q` is split on whitespace into tokens; each token MUST match
-  (case-insensitive substring, AND semantics) against the combined haystack of
-  offer title + description, all step titles + descriptions, and the SMB's name,
-  category, location and capabilities.
-- Optional filters: `category` (exact, case-insensitive), `location`
-  (substring), `vetted` (truthy value keeps only vetted SMBs).
+  (case- and accent-insensitive substring, AND semantics) against the combined
+  haystack of offer title + description, all step titles + descriptions, and the
+  SMB's name, category, location and capabilities. Diacritics are folded on both
+  sides (NFD, combining marks stripped), so `habilitacion` matches
+  `habilitación` and vice versa.
+- Optional filters: `category` (exact, case- and accent-insensitive), `location`
+  (substring, case- and accent-insensitive), `vetted` (truthy value keeps only
+  vetted SMBs).
 - Ranking MUST be: SMB rating score (good − bad) descending, then price
   ascending, then id ascending. **Reputation outranks price** — that ordering is
   what makes ratings (and the settled money behind them) economically meaningful.

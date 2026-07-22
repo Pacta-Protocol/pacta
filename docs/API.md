@@ -21,8 +21,8 @@ curl -s "http://localhost:3210/api/offers?q=lawyer+Costa+Rica+company+hotel"
 # optional filters: &category=legal|tourism|real-estate|accounting  &location=costa+rica
 ```
 
-Keywords are AND-matched (case-insensitive) across the offer title/description/steps and
-the SMB name/category/location/capabilities. Results are ranked by **SMB rating score
+Keywords are AND-matched (case- and accent-insensitive) across the offer title/description/steps
+and the SMB name/category/location/capabilities, so `habilitacion` finds `habilitación`. Results are ranked by **SMB rating score
 (good − bad) desc, then price asc**. Each result carries the SMB profile, vetted badge,
 rating aggregate, price, escrow terms, and the granular step list.
 

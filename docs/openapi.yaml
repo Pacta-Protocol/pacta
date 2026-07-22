@@ -264,7 +264,7 @@ paths:
       tags: [offers]
       summary: Search offers
       description: |
-        `q` keywords are AND-matched (case-insensitive substring) across the offer
+        `q` keywords are AND-matched (case- and accent-insensitive substring) across the offer
         title/description/steps and the SMB name/category/location/capabilities.
         Ranked by SMB rating score (good - bad) descending, then price ascending,
         then id.
@@ -277,11 +277,11 @@ paths:
         - name: category
           in: query
           schema: { type: string }
-          description: Exact category filter (case-insensitive).
+          description: Exact category filter (case- and accent-insensitive).
         - name: location
           in: query
           schema: { type: string }
-          description: Location substring filter.
+          description: Location substring filter (case- and accent-insensitive).
         - name: vetted
           in: query
           schema: { type: string, enum: ['1', 'true', 'yes', 'on'] }

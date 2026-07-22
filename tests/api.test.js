@@ -358,6 +358,38 @@ test('SMB onboarding: register (auto-vetted) and publish a searchable offer', as
   assert.equal(found.body[0].title, 'Apostille a document bundle');
 });
 
+test('search: accent-insensitive for Spanish/Portuguese queries', async (t) => {
+  const s = await startTestServer();
+  t.after(s.close);
+  const { api } = s;
+
+  const reg = await api('POST', '/smbs', {
+    name: 'Notaría Pública López', category: 'legal', location: 'São Paulo',
+    description: 'Servicios de habilitación y certificación jurídica.',
+    capabilities: 'habilitación, cédula jurídica, certificación',
+  });
+  assert.equal(reg.status, 201);
+  await api('POST', '/offers', {
+    smb_id: reg.body.id, title: 'Trámite de habilitación', description: 'Gestión completa.',
+    price_cents: 30_000, upfront_pct: 50, steps: [{ title: 'Reunir documentos' }],
+  });
+
+  // Unaccented query finds accented text (how most people type on mobile).
+  const noAccent = await api('GET', '/offers?q=' + encodeURIComponent('habilitacion juridica'));
+  assert.ok(noAccent.body.some((o) => o.smb.name === 'Notaría Pública López'),
+    'unaccented query matches accented offer text');
+
+  // Accented query finds the same offer.
+  const withAccent = await api('GET', '/offers?q=' + encodeURIComponent('habilitación'));
+  assert.ok(withAccent.body.some((o) => o.smb.name === 'Notaría Pública López'),
+    'accented query still matches');
+
+  // Location filter is accent-insensitive too.
+  const loc = await api('GET', '/offers?location=' + encodeURIComponent('sao paulo'));
+  assert.ok(loc.body.some((o) => o.smb.name === 'Notaría Pública López'),
+    'unaccented location filter matches "São Paulo"');
+});
+
 test('validation & 404s: bad routes, bad ids, bad JSON', async (t) => {
   const s = await startTestServer();
   t.after(s.close);

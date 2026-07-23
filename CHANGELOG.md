@@ -10,6 +10,32 @@ separately from this implementation; every release states which spec version it
 implements, so independent implementations can target the spec without tracking
 this codebase.
 
+## [0.1.1] - 2026-07-23
+
+Implements **protocol spec 0.1.0**. Additive and backward compatible: no
+existing route changes shape or behavior, so any 0.1.0 integration keeps working.
+
+### Added
+
+- **Health endpoint** `GET /api/health`: unauthenticated, read-only liveness
+  check returning `status`, `plan` (base/pacta) and `ledger_ok` (the ledger
+  conservation invariant). Cheap enough for systemd, Caddy or uptime checks to
+  poll directly. Pacta's first external contribution (#6, closes #4).
+- **Litepaper** in English and Spanish ([docs/LITEPAPER.md](docs/LITEPAPER.md),
+  [docs/LITEPAPER.es.md](docs/LITEPAPER.es.md)).
+- **Public roadmap** ([ROADMAP.md](ROADMAP.md)) and an architecture diagram in
+  the spec.
+
+### Changed
+
+- Offer search is now accent-insensitive for Spanish and Portuguese, so
+  "cafe" matches "café".
+- **Governance**: a purely additive, read-only, unauthenticated route is not a
+  protocol-level change and needs no proposal; the issue that specifies it is
+  enough. `GET /api/health` is the reference example.
+
+[0.1.1]: https://github.com/Pacta-Protocol/Pacta.Protocol/releases/tag/v0.1.1
+
 ## [0.1.0] - 2026-07-17
 
 First tagged release. Implements **protocol spec 0.1.0**.
